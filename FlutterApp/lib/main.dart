@@ -1,14 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_my_first_app/data/data_handler.dart';
-import 'package:flutter_my_first_app/pages/my_test_page.dart';
-import 'package:flutter_my_first_app/pages/battery_page.dart';
-import 'package:flutter_my_first_app/screens/scan_screen.dart';
-
-import 'package:flutter_my_first_app/screens/connection_screen.dart';
-
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_my_first_app/screens/scan_screen.dart';
 
 
 
@@ -25,9 +18,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-
-  final DataHandler _dataHandler = DataHandler();
-
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
 
   @override
@@ -49,9 +39,19 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Kevin Control',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 83, 135, 231)),
+        colorScheme: ColorScheme(
+          brightness: Brightness.light,
+          primary: const Color.fromARGB(255, 89, 131, 146),
+          onPrimary: const Color.fromARGB(255, 255, 255, 255),
+          secondary: const Color.fromARGB(255, 158, 179, 194),
+          onSecondary: const Color.fromARGB(255, 58, 58, 58),
+          error: const Color.fromARGB(255, 197, 52, 52),
+          onError: const Color.fromARGB(255, 255, 255, 255),
+          surface: const Color.fromARGB(255, 255, 255, 255),
+          onSurface: const Color.fromARGB(255, 58, 58, 58),
+        ),
       ),
       home: ScanScreen(),
     );

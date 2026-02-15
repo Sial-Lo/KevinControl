@@ -31,9 +31,8 @@ static struct
 } gHandle;
 
 Characteristic_Config_T gCharacteristicConfig[BLE_CHARACTERISTIC_UNDEFINED] = {
-    [BLE_CHARACTERISTIC_BASIC] = {"beb5483e-36e1-4688-b7f5-ea07361b26a8", (BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ)},
+    [BLE_CHARACTERISTIC_BASIC] = {"beb5483e-36e1-4688-b7f5-ea07361b26a8", (BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE)},
     [BLE_CHARACTERISTIC_DETAILED] = {"d7be7b90-2423-4d6e-926d-239bc96bb2fd", (BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ)},
-    [BLE_CHARACTERISTIC_WRITE] = {"aa6316cb-878e-4572-a94e-fec129349f85", (BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE)},
 };
 
 void BLEBattery_Initialize(void)
@@ -58,12 +57,20 @@ void BLEBattery_Update(void)
 
 static void updateBasic(void)
 {
-    uint8_t sendValue[7];
+    uint8_t sendValue[9];
 
     sendValue[0] = Battery_GetSoc();
 
     sendValue[1] = (uint8_t)(Battery_GetPower() >> 8);
     sendValue[2] = (uint8_t)(Battery_GetPower());
+
+    sendValue[3] = (uint8_t)Battery_GetCurrentDcOutput();
+    sendValue[4] = (uint8_t)Battery_GetCurrentAcOutput();
+    sendValue[5] = (uint8_t)Battery_GetCurrentDcInput();
+    sendValue[6] = (uint8_t)Battery_GetCurrentAcInput();
+
+    sendValue[7] = (uint8_t)Battery_GetRequestedDcOutput();
+    sendValue[8] = (uint8_t)Battery_GetRequestedAcOutput();
 
     gHandle.pCharacteristic[BLE_CHARACTERISTIC_BASIC]->setValue(sendValue, sizeof(sendValue));
     gHandle.pCharacteristic[BLE_CHARACTERISTIC_BASIC]->notify();
@@ -83,7 +90,7 @@ static void updateWrite(void)
     Battery_OutputState_E newStateOutputDC = (gHandle.pCharacteristic[BLE_CHARACTERISTIC_WRITE]->getValue()[0] == 0) ? BATTERY_OUTPUT_STATE_OFF : BATTERY_OUTPUT_STATE_ON;
     if (lastStateOutputDC != newStateOutputDC)
     {
-        Battery_SetOutputDC(newStateOutputDC);
+        Battery_SetRequestedDcOutput(newStateOutputDC);
         lastStateOutputDC = newStateOutputDC;
     }
 
@@ -91,7 +98,7 @@ static void updateWrite(void)
     Battery_OutputState_E newStateOutputAC = (gHandle.pCharacteristic[BLE_CHARACTERISTIC_WRITE]->getValue()[1] == 0) ? BATTERY_OUTPUT_STATE_OFF : BATTERY_OUTPUT_STATE_ON;
     if (lastStateOutputAC != newStateOutputAC)
     {
-        Battery_SetOutputAC(newStateOutputAC);
+        Battery_SetRequestedAcOutput(newStateOutputAC);
         lastStateOutputAC = newStateOutputAC;
     }
 }

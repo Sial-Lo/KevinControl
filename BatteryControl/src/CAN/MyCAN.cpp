@@ -9,12 +9,11 @@
 
 #define MAX_MESSAGES 32
 
-typedef void (*FunctionPointer)(void);
-
 typedef struct MyCAN_Message_T
 {
     uint32_t identifier;
-    uint8_t *data;
+    uint32_t mask;
+    MyCan_Callback callback;
 } MyCAN_Message_T;
 
 static void handle_rx_messages(twai_message_t &message);
@@ -22,8 +21,7 @@ static void handle_rx_messages(twai_message_t &message);
 static struct
 {
     bool initialized = false;
-    MyCAN_Message_T messages[MAX_MESSAGES] = {0, NULL};
-    uint8_t messageCounter = 0u;
+    MyCAN_Message_T messages[MAX_MESSAGES] = {0, 0, NULL};
 } Handle;
 
 bool MyCAN_Initialize(void)
@@ -69,14 +67,12 @@ void MyCAN_Update(void)
 
     if (twaistatus.state != TWAI_STATE_RUNNING)
     {
-        
     }
     else
     {
         // Check if alert happened
         uint32_t alerts_triggered;
         twai_read_alerts(&alerts_triggered, pdMS_TO_TICKS(POLLING_RATE_MS));
-        
 
         // Handle alerts
         if (alerts_triggered & TWAI_ALERT_ERR_PASS)
@@ -108,42 +104,27 @@ void MyCAN_Update(void)
     }
 }
 
-bool MyCAN_RegisterMessage(uint32_t messageId, uint8_t messageData[8])
+bool MyCAN_RegisterMessage(uint32_t messageId, uint32_t mask, MyCan_Callback callback)
 {
+    static uint8_t messageCounter = 0u;
     bool retVal = true;
 
-    if (NULL == messageData)
+    if (NULL == callback)
     {
-        Serial.printf("ERROR, %s, %i, The parameter messageData is a NULL pointer.\n", __FILE__, __LINE__);
+        Serial.printf("ERROR, %s, %i, The parameter callback is a NULL pointer.\n", __FILE__, __LINE__);
         retVal = false;
     }
-    else if (Handle.messageCounter >= MAX_MESSAGES)
+    else if (messageCounter >= MAX_MESSAGES)
     {
         Serial.printf("ERROR, %s, %i, The module can't hold more messages. Change the value of MAX_MESSAGES.\n", __FILE__, __LINE__);
         retVal = false;
     }
     else
     {
-        bool idAlreadyRegistered = false;
-        for (uint8_t i = 0u; i < Handle.messageCounter; i++)
-        {
-            if (Handle.messages[i].identifier == messageId)
-            {
-                idAlreadyRegistered = true;
-            }
-        }
-
-        if (false == idAlreadyRegistered)
-        {
-            Handle.messages[Handle.messageCounter].identifier = messageId;
-            Handle.messages[Handle.messageCounter].data = messageData;
-            Handle.messageCounter++;
-        }
-        else
-        {
-            Serial.printf("ERROR, %s, %i, A message with this id is already registered.\n", __FILE__, __LINE__);
-            retVal = false;
-        }
+        Handle.messages[messageCounter].identifier = messageId;
+        Handle.messages[messageCounter].mask = mask;
+        Handle.messages[messageCounter].callback = callback;
+        messageCounter++;
     }
 
     return retVal;
@@ -188,17 +169,14 @@ static void handle_rx_messages(twai_message_t &message)
     {
         if (!(message.rtr))
         {
-            // Serial.printf("INFO, %s, %i, Received Message %#010x.\n", __FILE__, __LINE__, message.identifier);
-            for (uint8_t messageCount = 0; messageCount < Handle.messageCounter; messageCount++)
+            for (uint8_t messageCount = 0; messageCount < MAX_MESSAGES; messageCount++)
             {
-                // Serial.printf("INFO, %s, %i, Check message %#010x.\n", __FILE__, __LINE__, message.identifier);
-                if (message.identifier == Handle.messages[messageCount].identifier)
+                if (NULL != Handle.messages[messageCount].callback)
                 {
-                    // Serial.printf("INFO, %s, %i, Matched registered Message %#010x.\n", __FILE__, __LINE__, messageCount);
-                    for (uint8_t byteCount = 0u; byteCount < 8u; byteCount++)
+                    if ((message.identifier & Handle.messages[messageCount].mask) == (Handle.messages[messageCount].identifier & Handle.messages[messageCount].mask))
                     {
-                        Handle.messages[messageCount].data[byteCount] = message.data[byteCount];
-                        // Serial.printf("INFO, %s, %i, Updated byte %i with %#010x.\n", __FILE__, __LINE__, byteCount, message.data[byteCount]);
+
+                        Handle.messages[messageCount].callback(message.identifier, message.data);
                     }
                 }
             }
@@ -206,6 +184,6 @@ static void handle_rx_messages(twai_message_t &message)
     }
     else
     {
-        Serial.println("Message is in Standard Format");
+        Serial.printf("ERROR, %s, %i, Message is in Standard Format.\n", __FILE__, __LINE__);
     }
 }

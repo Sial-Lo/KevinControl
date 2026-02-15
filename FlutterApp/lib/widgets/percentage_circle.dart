@@ -14,8 +14,6 @@ class PercentageCircle extends StatelessWidget {
   final Color backgroundColor;
   final Color fillColor;
   final bool autoColor;
-  final String? title;
-  final TextStyle? titleStyle;
   final TextStyle? textStyle;
   final Duration animationDuration;
   final bool animate;
@@ -29,8 +27,6 @@ class PercentageCircle extends StatelessWidget {
     this.backgroundColor = const Color(0xFFE0E0E0),
     this.fillColor = Colors.blue,
     this.autoColor = true,
-    this.title,
-    this.titleStyle,
     this.textStyle,
     this.animationDuration = const Duration(milliseconds: 600),
     this.animate = true,
@@ -43,11 +39,6 @@ class PercentageCircle extends StatelessWidget {
       fontSize: size * 0.25,
       fontWeight: FontWeight.bold,
       color: Colors.black,
-    );
-
-    final effectiveTitleStyle = titleStyle ?? TextStyle(
-      fontSize: size * 0.12,
-      color: Colors.black54,
     );
 
     final target = percentage.clamp(0.0, 100.0);
@@ -68,16 +59,7 @@ class PercentageCircle extends StatelessWidget {
             donut: donut,
           ),
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${value.round()}%', style: effectiveTextStyle),
-                if (title != null) ...[
-                  SizedBox(height: size * 0.08),
-                  Text(title!, style: effectiveTitleStyle, textAlign: TextAlign.center),
-                ],
-              ],
-            ),
+            child: Text('${value.round()}%', style: effectiveTextStyle),
           ),
         ),
       );

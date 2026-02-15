@@ -2,9 +2,8 @@
 
 #include "MyCAN.h"
 #include "Battery.h"
-#include "MyBLEServer.h"
-#include "BLEBattery.h"
-#include "Power.h"
+#include "MyBLE.h"
+#include "Broker.h"
 #include "driver/twai.h"
 
 void setup()
@@ -13,37 +12,28 @@ void setup()
 
     MyCAN_Initialize();
     Battery_Initialize();
-    MyBLEServer_Initialize("KevinControl");
-    BLEBattery_Initialize();
-    // Power_Initialize();
+    MyBLE_Initialize("KevinControl");
+    Broker_Initialize();
 
-    setCpuFrequencyMhz(80);
+    // setCpuFrequencyMhz(80);
     Serial.printf("INFO, %s, %i, System initialization successfull.\n", __FILE__, __LINE__);
 }
 
 void loop()
 {
-    static unsigned long powerTimestamp = millis();
     static unsigned long canTimestamp = millis();
     static unsigned long batteryTimestamp = millis();
 
-    if (10 <= (millis() - powerTimestamp))
+    if (10 <= (millis() - canTimestamp))
     {
-        // Power_Update();
+        canTimestamp = millis();
+        MyCAN_Update();
     }
 
-    // if (true == MyBLEServer_Connected())
-    // {
-        if (10 <= (millis() - canTimestamp))
-        {
-            canTimestamp = millis();
-            MyCAN_Update();
-        }
-
-        if (1000 <= (millis() - batteryTimestamp))
-        {
-            batteryTimestamp = millis();
-            BLEBattery_Update();
-        }
-    // }
+    if (1000 <= (millis() - batteryTimestamp))
+    {
+        batteryTimestamp = millis();
+        Battery_Update();
+        Broker_Update();
+    }
 }

@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:ffi';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:flutter_my_first_app/data/battery_data.dart';
-import 'package:flutter_my_first_app/widgets/ios_toggle_button.dart';
 import 'package:flutter_my_first_app/widgets/percentage_circle.dart';
 
 class BatteryScreen extends StatefulWidget {
@@ -16,35 +14,41 @@ class BatteryScreen extends StatefulWidget {
 }
 
 class _BatteryScreenState extends State<BatteryScreen> {
-  final BatteryData data = BatteryData();
-  final String _characteristicBasics = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-  final String _characteristicWrite = "aa6316cb-878e-4572-a94e-fec129349f85";
+  final String _characteristicReceive = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+  final String _characteristicTransmit = "d7be7b90-2423-4d6e-926d-239bc96bb2fd";
 
-  late StreamSubscription<List<int>> _notificationSubscriptionBasics;
-  late StreamSubscription<List<int>> _notificationSubscriptionWrite;
+  late StreamSubscription<List<int>> _notificationSubscriptionReceive;
+  // late StreamSubscription<List<int>> _notificationSubscriptionTransmit;
 
   int _showDetails = 0;
 
   int _soc = 0;
-  int _power = 0;
-  int _output12VState = 0;
-  int _output230VState = 0;
+  bool _dcOutputState = false;
+  bool _acOutputState = false;
+  bool _dcInputState = false;
+  bool _acInputState = false;
+  int _dcInputPower = 0;
+  int _dcOutputPower = 0;
+  int _acInputPower = 0;
+  int _acOutputPower = 0;
+  int _batteryPower = 0;
+  int _cellTemperature = 0;
+
+  bool _requestedDcOutputState = false;
+  bool _requestedAcOutputState = false;
 
   @override
   void initState() {
     super.initState();
 
-    setNotifyToBasics();
-    setNotifyToWrite();
-
-    _readBasic();
-    _readWrite();
+    setNotifyToReceive();
+    delayFunction();
   }
 
   @override
   void dispose() {
-    _notificationSubscriptionBasics.cancel();
-    _notificationSubscriptionWrite.cancel();
+    _notificationSubscriptionReceive.cancel();
+    // _notificationSubscriptionTransmit.cancel();
     super.dispose();
   }
 
@@ -60,125 +64,286 @@ class _BatteryScreenState extends State<BatteryScreen> {
         }
       }
     }
-    return null!;
+    throw Exception("Characteristic with UUID $characteristicUuid not found");
   }
 
-  void setNotifyToBasics() async {
-    _notificationSubscriptionBasics = getCharacteristic(_characteristicBasics)
+  void setNotifyToReceive() async {
+    _notificationSubscriptionReceive = getCharacteristic(_characteristicReceive)
         .lastValueStream
         .listen((value) {
           setState(() {
             debugPrint("Notification value: $value");
-            if (value.isNotEmpty) {
-              _soc = value[0];
-              _power = ((value[1] << 8) | (value[2])).toSigned(16);
+            if (value.length >= 9) {
+              _soc = ((value[1] << 8) | (value[0])) / 0xFFFF * 100 ~/ 1;
+              _dcOutputState = value[2] == 1;
+              _acOutputState = value[3] == 1;
+              _dcInputState = value[4] == 1;
+              _acInputState = value[5] == 1;
+              _dcInputPower = ((value[7] << 8) | (value[6]).toSigned(16));
+              _dcOutputPower = (value[9] << 8) | (value[8]).toSigned(16) * -1;
+              _acInputPower = (value[11] << 8) | (value[10]).toSigned(16);
+              _acOutputPower = (value[13] << 8) | (value[12]).toSigned(16) * -1;
+              _batteryPower = _dcInputPower + _acInputPower + _dcOutputPower + _acOutputPower;
+              _cellTemperature = ((value[15] << 8) | (value[14])).toSigned(16) * 0.0039 ~/ 1;
             }
           });
         });
-    await getCharacteristic(_characteristicBasics).setNotifyValue(true);
+    await getCharacteristic(_characteristicReceive).setNotifyValue(true);
   }
 
-  void _readBasic() async {
-    Future<List<int>> futureValue = getCharacteristic(_characteristicWrite).read();
+  void delayFunction() async {
+    await Future.delayed(const Duration(milliseconds: 250));
+    _readTransmit();
+  }
+
+  void _readTransmit() async {
+    Future<List<int>> futureValue = getCharacteristic(
+      _characteristicTransmit,
+    ).read();
     List<int> value = await futureValue;
     if (value.isNotEmpty) {
       setState(() {
-        _soc = value[0];
-        _power = ((value[1] << 8) | (value[2])).toSigned(16);
-      });
-    }
-  }
-
-  void setNotifyToWrite() async {
-    _notificationSubscriptionWrite = getCharacteristic(_characteristicWrite)
-        .lastValueStream
-        .listen((value) {
-          setState(() {
-            debugPrint("Notification value: $value");
-            if (value.isNotEmpty) {
-              _output12VState = value[0];
-              _output230VState = value[1];
-            }
-          });
-        });
-    await getCharacteristic(_characteristicWrite).setNotifyValue(true);
-  }
-
-  void _readWrite() async {
-    Future<List<int>> futureValue = getCharacteristic(_characteristicWrite).read();
-    List<int> value = await futureValue;
-    if (value.isNotEmpty) {
-      setState(() {
-        _output12VState = value[0];
-        _output230VState = value[1];
+        _requestedDcOutputState = value[0] == 1;
+        _requestedAcOutputState = value[1] == 1;
       });
     }
   }
 
   void writeCharacteristic() async {
-    List<int> value = [_output12VState, _output230VState];
-    getCharacteristic(_characteristicWrite).write(value);
+    List<int> value = [
+      _requestedDcOutputState ? 1 : 0,
+      _requestedAcOutputState ? 1 : 0,
+    ];
+    getCharacteristic(_characteristicTransmit).write(value);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Center(
         child: Column(
+          spacing: 30,
+          mainAxisSize: MainAxisSize.max,
           children: [
-            const SizedBox(height: 20),
-            BatteryPercentage(value: _soc),
-            const SizedBox(height: 20),
+            SizedBox(height: 0),
             DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              child: Text("$_power W"),
-            ),
-            const SizedBox(height: 20),
+                          style: const TextStyle(
+                            fontSize: 25,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          child: Text("Battery"),
+                        ),
             Row(
               mainAxisSize: MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                IoSToggleButton(
-                  value: _output12VState,
-                  onChanged: (v) async {
-                    _output12VState = v;
-                    writeCharacteristic();
-                  },
-                  title: '12 V',
-                  width: 65,
-                  height: 40,
-                  requireConfirmation: true,
-                  confirmDialogTitle: 'Confirm',
-                  confirmDialogContentOn: 'Do you want to enable 12 V output?',
-                  confirmDialogContentOff:
-                      'Do you want to disable 12 V output?',
+                Column(
+                  mainAxisSize: MainAxisSize.max,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.max,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        DefaultTextStyle.merge(
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          child: Text("DC Input"),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.max,
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                SizedBox(height: 0, width: 40),
+                                DefaultTextStyle.merge(
+                                  style: const TextStyle(fontSize: 10),
+                                  child: Text("$_dcInputPower W"),
+                                ),
+                              ],
+                            ),
+                            Icon(
+                              CupertinoIcons.arrow_right_circle_fill,
+                              color: _dcInputState
+                                  ? CupertinoColors.activeGreen
+                                  : CupertinoColors.systemGrey,
+                              size: 40,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 20),
+                    Column(
+                      mainAxisSize: MainAxisSize.max,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        DefaultTextStyle.merge(
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          child: Text("DC Output"),
+                        ),
+                        Row(
+                          children: [
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                SizedBox(height: 0, width: 40),
+                                DefaultTextStyle.merge(
+                                  style: const TextStyle(fontSize: 10),
+                                  child: Text("$_dcOutputPower W"),
+                                ),
+                              ],
+                            ),
+                            Icon(
+                              CupertinoIcons.arrow_left_circle_fill,
+                              color: _dcOutputState
+                                  ? CupertinoColors.activeGreen
+                                  : CupertinoColors.systemGrey,
+                              size: 40,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                IoSToggleButton(
-                  value: _output230VState,
-                  onChanged: (v) async {
-                    _output230VState = v;
-                    writeCharacteristic();
-                  },
-                  title: '230 V',
-                  width: 65,
-                  height: 40,
-                  requireConfirmation: true,
-                  confirmDialogTitle: 'Confirm',
-                  confirmDialogContentOn: 'Do you want to enable 230 V output?',
-                  confirmDialogContentOff:
-                      'Do you want to disable 230 V output?',
+                SizedBox(width: 25),
+                BatteryPercentage(value: _soc),
+                SizedBox(width: 25),
+                Column(
+                  mainAxisSize: MainAxisSize.max,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.max,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        DefaultTextStyle.merge(
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          child: Text("AC Input"),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.max,
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Icon(
+                              CupertinoIcons.arrow_left_circle_fill,
+                              color: _acInputState
+                                  ? CupertinoColors.activeGreen
+                                  : CupertinoColors.systemGrey,
+                              size: 40,
+                            ),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                SizedBox(height: 0, width: 40),
+                                DefaultTextStyle.merge(
+                                  style: const TextStyle(fontSize: 10),
+                                  child: Text("$_acInputPower W"),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 20),
+                    Column(
+                      mainAxisSize: MainAxisSize.max,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        DefaultTextStyle.merge(
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          child: Text("AC Output"),
+                        ),
+                        Row(
+                          children: [
+                            Icon(
+                              CupertinoIcons.arrow_right_circle_fill,
+                              color: _acOutputState
+                                  ? CupertinoColors.activeGreen
+                                  : CupertinoColors.systemGrey,
+                              size: 40,
+                            ),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                SizedBox(height: 0, width: 40),
+                                DefaultTextStyle.merge(
+                                  style: const TextStyle(fontSize: 10),
+                                  child: Text("$_acOutputPower W"),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
-            // const SizedBox(height: 24),
-            // FloatingActionButton(
-            //   onPressed: toggleDetails,
-            //   tooltip: 'Show Details',
-            //   child: const Icon(Icons.arrow_downward_rounded),
-            // ),
-            // const SizedBox(height: 24),
-            // BatteryDetailed(device: widget.device, showDetails: _showDetails),
+            DefaultTextStyle.merge(
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              child: Text("$_batteryPower W"),
+            ),
+            DefaultTextStyle.merge(
+              style: const TextStyle(fontSize: 16),
+              child: Text("$_cellTemperature °C"),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.max,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    Text("DC Output"),
+                    CupertinoSwitch(
+                      value: _requestedDcOutputState,
+                      activeTrackColor: CupertinoColors.activeGreen,
+                      onChanged: (bool value) {
+                        // This is called when the user toggles the switch.
+                        setState(() {
+                          _requestedDcOutputState = value;
+                          writeCharacteristic();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Text("AC Output"),
+                    CupertinoSwitch(
+                      value: _requestedAcOutputState,
+                      activeTrackColor: CupertinoColors.activeGreen,
+                      onChanged: (bool value) {
+                        // This is called when the user toggles the switch.
+                        setState(() {
+                          _requestedAcOutputState = value;
+                          writeCharacteristic();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -197,86 +362,11 @@ class BatteryPercentage extends StatelessWidget {
       children: [
         PercentageCircle(
           percentage: value.toDouble(),
-          size: 160,
+          size: 175,
           strokeWidth: 12,
           backgroundColor: Colors.grey.shade200,
-          title: 'SOC',
         ),
       ],
     );
-  }
-}
-
-class BatteryDetailed extends StatefulWidget {
-  const BatteryDetailed({
-    super.key,
-    required this.device,
-    required this.showDetails,
-  });
-
-  final BluetoothDevice device;
-  final int showDetails;
-
-  @override
-  State<BatteryDetailed> createState() => _BatteryDetailedState();
-}
-
-class _BatteryDetailedState extends State<BatteryDetailed> {
-  final String _characteristicDetails = "d7be7b90-2423-4d6e-926d-239bc96bb2fd";
-  late StreamSubscription<List<int>> _notificationSubscriptionDetails;
-
-  int _batteryCurrent = 0;
-
-  BluetoothCharacteristic _getCharacteristic(String characteristicUuid) {
-    for (var service in widget.device.servicesList) {
-      for (var characteristic in service.characteristics) {
-        if (characteristic.uuid.toString() == characteristicUuid) {
-          return characteristic;
-        }
-      }
-    }
-    return null!;
-  }
-
-  void _setNotifyToDetails() async {
-    _notificationSubscriptionDetails =
-        _getCharacteristic(_characteristicDetails).lastValueStream.listen((
-          value,
-        ) {
-          setState(() {
-            debugPrint("Notification value: $value");
-            if (value.isNotEmpty) {
-              _batteryCurrent = (value[0] << 8) & (value[1]);
-            }
-          });
-        });
-    await _getCharacteristic(_characteristicDetails).setNotifyValue(true);
-  }
-
-  @override
-  void initState() {
-    _setNotifyToDetails();
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    _notificationSubscriptionDetails.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (0 == widget.showDetails) {
-      _notificationSubscriptionDetails.cancel();
-      return SizedBox(height: 24);
-    } else {
-      _setNotifyToDetails();
-      return Row(
-        mainAxisSize: MainAxisSize.max,
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [Text("Hi $_batteryCurrent")],
-      );
-    }
   }
 }

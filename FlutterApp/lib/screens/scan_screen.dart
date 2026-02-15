@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import 'package:flutter_my_first_app/pages/device_screen.dart';
 import 'package:flutter_my_first_app/screens/home_screen.dart';
 import 'package:flutter_my_first_app/screens/loading_screen.dart';
 import '../utils/snackbar.dart';
@@ -79,12 +78,6 @@ class _ScanScreenState extends State<ScanScreen> {
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 15),
         withKeywords: ["Kevin"],
-        // webOptionalServices: [
-        //   Guid("180f"), // battery
-        //   Guid("180a"), // device info
-        //   Guid("1800"), // generic access
-        //   Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e"), // Nordic UART
-        // ],
       );
     } catch (e, backtrace) {
       Snackbar.show(

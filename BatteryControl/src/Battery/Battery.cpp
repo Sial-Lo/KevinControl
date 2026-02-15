@@ -23,113 +23,254 @@ typedef struct
 } CAN_T;
 
 static CAN_T gCAN[CAN_FRAME_UNDEFINED] = {
-    [CAN_FRAME_BatteryStatus] = {.id = 0x18FF0003},
-    [CAN_FRAME_DcInputAndOutput] = {.id = 0x18FF0103},
-    [CAN_FRAME_OperatingState] = {.id = 0x18FF0303},
-    [CAN_FRAME_FunctionOperatingState] = {.id = 0x18FF0403},
-    [CAN_FRAME_FailureCodeBuffer] = {.id = 0x18FF0503},
-    [CAN_FRAME_BatteryTemperature] = {.id = 0x18FF0603},
-    [CAN_FRAME_AcInputAndOutput] = {.id = 0x18FF0903},
-    [CAN_FRAME_CellVoltage] = {.id = 0x18FF1003},
-    [CAN_FRAME_CellSOC] = {.id = 0x18FF1803},
+    [CAN_FRAME_BatteryStatus] = {.id = 0x18FF0000},
+    [CAN_FRAME_DcInputAndOutput] = {.id = 0x18FF0100},
+    [CAN_FRAME_OperatingState] = {.id = 0x18FF0300},
+    [CAN_FRAME_FunctionOperatingState] = {.id = 0x18FF0400},
+    [CAN_FRAME_FailureCodeBuffer] = {.id = 0x18FF0500},
+    [CAN_FRAME_BatteryTemperature] = {.id = 0x18FF0600},
+    [CAN_FRAME_AcInputAndOutput] = {.id = 0x18FF0900},
+    [CAN_FRAME_CellVoltage] = {.id = 0x18FF1000},
+    [CAN_FRAME_CellSOC] = {.id = 0x18FF1800},
 };
+
+static int16_t getDcInputPower(void);
+static int16_t getDcOutputPower(void);
+static int16_t getDcPower(void);
+static int16_t getAcInputPower(void);
+static int16_t getAcOutputPower(void);
+static int16_t getAcPower(void);
+static int16_t getBatteryPower(void);
+static void canCallback(uint32_t identifier, uint8_t data[8]);
 
 static struct
 {
-    uint32_t notificationValue = 0u;
+    uint8_t batteryId = 0xFFu;
+    Battery_Data_T data;
+    bool connected = false;
+    uint64_t connectionTimestamp = 0u;
+    uint64_t lastMessageTimestamp = 0u;
 } Handle;
 
 void Battery_Initialize(void)
 {
-    // Initialize CAN
-    for (uint8_t i = 0u; i < CAN_FRAME_UNDEFINED; i++)
+    MyCAN_RegisterMessage(0x18FF0000u, 0xFFFF0000u, canCallback);
+}
+
+void Battery_Update(void)
+{
+    if (Handle.connected)
     {
-        MyCAN_RegisterMessage(gCAN[i].id, gCAN[i].data);
+        if (2000 < (millis() - Handle.lastMessageTimestamp))
+        {
+            Handle.connected = false;
+            Handle.connectionTimestamp = 0u;
+            Serial.printf("INFO, %s, %i, Battery disconnected.\n", __FILE__, __LINE__);
+        }
+        else
+        {
+            
+            Handle.data.soc = (uint16_t)((gCAN[CAN_FRAME_BatteryStatus].data[0] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[1]);
+            Handle.data.batteryCurrent = (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[2] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[3]);
+            Handle.data.reaminingTime = (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[4] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[5]);
+            Handle.data.batteryAh = (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[6] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[7]);
+
+            Handle.data.dcInputVoltage = (uint16_t)((gCAN[CAN_FRAME_DcInputAndOutput].data[0] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[1]);
+            Handle.data.dcInputCurrent = (int16_t)((gCAN[CAN_FRAME_DcInputAndOutput].data[2] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[3]);
+            Handle.data.dcOutputVoltage = (uint16_t)((gCAN[CAN_FRAME_DcInputAndOutput].data[4] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[5]);
+            Handle.data.dcOutputCurrent = (int16_t)((gCAN[CAN_FRAME_DcInputAndOutput].data[6] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[7]);
+
+            Handle.data.operatingState = (Battery_OperatingState_E)gCAN[CAN_FRAME_OperatingState].data[0];
+            Handle.data.failureLevel = (Battery_FailureLevel_E)gCAN[CAN_FRAME_OperatingState].data[1];
+            Handle.data.lpsTestMode = (Battery_LpsTestMode_E)gCAN[CAN_FRAME_OperatingState].data[2];
+            Handle.data.lpsWakeupFlag = (Battery_LpsWakeupFlag_BF)gCAN[CAN_FRAME_OperatingState].data[3];
+            Handle.data.lpsInputState = (Battery_LpsInputState_BF)gCAN[CAN_FRAME_OperatingState].data[4];
+            Handle.data.lpsOutputState = (Battery_LpsOutputState_BF)gCAN[CAN_FRAME_OperatingState].data[5];
+            Handle.data.cellCount = gCAN[CAN_FRAME_OperatingState].data[6];
+            Handle.data.temperatureSensorCount = gCAN[CAN_FRAME_OperatingState].data[7];
+
+            Handle.data.inverterOperatingState = (Battery_FunctionOperatingState_E)gCAN[CAN_FRAME_FunctionOperatingState].data[0];
+            Handle.data.inverterFailureLevel = (Battery_FailureLevel_E)gCAN[CAN_FRAME_FunctionOperatingState].data[1];
+            Handle.data.chargerOperatingState = (Battery_FunctionOperatingState_E)gCAN[CAN_FRAME_FunctionOperatingState].data[2];
+            Handle.data.chargerFailureLevel = (Battery_FailureLevel_E)gCAN[CAN_FRAME_FunctionOperatingState].data[3];
+            Handle.data.dcInputOperatingState = (Battery_FunctionOperatingState_E)gCAN[CAN_FRAME_FunctionOperatingState].data[4];
+            Handle.data.dcInputFailureLevel = (Battery_FailureLevel_E)gCAN[CAN_FRAME_FunctionOperatingState].data[5];
+            Handle.data.dcOutputOperatingState = (Battery_FunctionOperatingState_E)gCAN[CAN_FRAME_FunctionOperatingState].data[6];
+            Handle.data.dcOutputFailureLevel = (Battery_FailureLevel_E)gCAN[CAN_FRAME_FunctionOperatingState].data[7];
+
+            Handle.data.internalTemperature1 = (int16_t)((gCAN[CAN_FRAME_BatteryTemperature].data[0] << 8) | gCAN[CAN_FRAME_BatteryTemperature].data[1]);
+            Handle.data.internalTemperature2 = (int16_t)((gCAN[CAN_FRAME_BatteryTemperature].data[2] << 8) | gCAN[CAN_FRAME_BatteryTemperature].data[3]);
+            Handle.data.internalTemperature3 = (int16_t)((gCAN[CAN_FRAME_BatteryTemperature].data[4] << 8) | gCAN[CAN_FRAME_BatteryTemperature].data[5]);
+            Handle.data.cellTemperatureAVG = (int16_t)((gCAN[CAN_FRAME_BatteryTemperature].data[6] << 8) | gCAN[CAN_FRAME_BatteryTemperature].data[7]);
+
+            Handle.data.acInputVoltage = (uint16_t)((gCAN[CAN_FRAME_AcInputAndOutput].data[0] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[1]);
+            Handle.data.acInputCurrent = (int16_t)((gCAN[CAN_FRAME_AcInputAndOutput].data[2] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[3]);
+            Handle.data.acOutputVoltage = (uint16_t)((gCAN[CAN_FRAME_AcInputAndOutput].data[4] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[5]);
+            Handle.data.acOutputCurrent = (int16_t)((gCAN[CAN_FRAME_AcInputAndOutput].data[6] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[7]);
+
+            Handle.data.voltageCell1 = (uint16_t)((gCAN[CAN_FRAME_CellVoltage].data[0] << 8) | gCAN[CAN_FRAME_CellVoltage].data[1]);
+            Handle.data.voltageCell2 = (uint16_t)((gCAN[CAN_FRAME_CellVoltage].data[2] << 8) | gCAN[CAN_FRAME_CellVoltage].data[3]);
+            Handle.data.voltageCell3 = (uint16_t)((gCAN[CAN_FRAME_CellVoltage].data[4] << 8) | gCAN[CAN_FRAME_CellVoltage].data[5]);
+            Handle.data.voltageCell4 = (uint16_t)((gCAN[CAN_FRAME_CellVoltage].data[6] << 8) | gCAN[CAN_FRAME_CellVoltage].data[7]);
+
+            Handle.data.socCell1 = (uint16_t)((gCAN[CAN_FRAME_CellSOC].data[0] << 8) | gCAN[CAN_FRAME_CellSOC].data[1]);
+            Handle.data.socCell2 = (uint16_t)((gCAN[CAN_FRAME_CellSOC].data[2] << 8) | gCAN[CAN_FRAME_CellSOC].data[3]);
+            Handle.data.socCell3 = (uint16_t)((gCAN[CAN_FRAME_CellSOC].data[4] << 8) | gCAN[CAN_FRAME_CellSOC].data[5]);
+            Handle.data.socCell4 = (uint16_t)((gCAN[CAN_FRAME_CellSOC].data[6] << 8) | gCAN[CAN_FRAME_CellSOC].data[7]);
+
+            Handle.data.dcInputPower = getDcInputPower();
+            Handle.data.dcOutputPower = getDcOutputPower();
+            Handle.data.dcPower = getDcPower();
+            Handle.data.acInputPower = getAcInputPower();
+            Handle.data.acOutputPower = getAcOutputPower();
+            Handle.data.acPower = getAcPower();
+            Handle.data.batteryPower = getBatteryPower();
+        }
     }
 }
 
-void Battery_SetOutputDC(Battery_OutputState_E state)
+bool Battery_IsConnected(void)
 {
-    uint8_t data[8];
-    data[0] = 0x00;
-    data[1] = 0x40;
-    data[2] = 0x00;
-    data[3] = 0x9F;
-    data[4] = 0x00;
-    data[5] = 0x00;
-    data[6] = 0x00;
-    data[7] = (uint8_t)state;
-
-    MyCAN_SendMessage(0x19EF0301u, sizeof(data), data);
+    return Handle.connected;
 }
 
-void Battery_SetOutputAC(Battery_OutputState_E state)
+uint64_t Battery_IsConnectedTimestamp(void)
 {
-    uint8_t data[8];
-    data[0] = 0x00;
-    data[1] = 0x40;
-    data[2] = 0x00;
-    data[3] = 0x9E;
-    data[4] = 0x00;
-    data[5] = 0x00;
-    data[6] = 0x00;
-    data[7] = (uint8_t)state;
-
-    MyCAN_SendMessage(0x19EF0301u, sizeof(data), data);
+    return Handle.connectionTimestamp;
 }
 
-uint8_t Battery_GetSoc(void)
+Battery_Data_T *Battery_GetDataPtr(void)
 {
-    uint16_t socRawValue = (gCAN[CAN_FRAME_BatteryStatus].data[0] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[1];
-    return (uint8_t)map(socRawValue, 0, 0xFFFF, 0, 100);
+    return &Handle.data;
 }
 
-int16_t Battery_GetCurrent(void)
+void Battery_SetDcOutput(Battery_OutputState_E state)
 {
-    return (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[2] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[3]);
+    if (0xFF == Handle.batteryId)
+    {
+        Serial.printf("ERROR, %s, %i, The device id is not set. Can't send messages.\n", __FILE__, __LINE__);
+    }
+    else
+    {
+        Serial.printf("INFO, %s, %i, Setting DC output state to %i.\n", __FILE__, __LINE__, state);
+
+        uint32_t id = 0x19EF00FFu | (Handle.batteryId << 8);
+        uint8_t data[8];
+        data[0] = 0x00;
+        data[1] = 0x40;
+        data[2] = 0x00;
+        data[3] = 0x9F;
+        data[4] = 0x00;
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = (uint8_t)state;
+
+        MyCAN_SendMessage(id, sizeof(data), data);
+    }
 }
 
-int16_t Battery_GetRemainingTime(void)
+void Battery_SetAcOutput(Battery_OutputState_E state)
 {
-    return (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[4] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[5]);
+    if (0xFF == Handle.batteryId)
+    {
+        Serial.printf("ERROR, %s, %i, The device id is not set. Can't send messages.\n", __FILE__, __LINE__);
+    }
+    else
+    {
+        Serial.printf("INFO, %s, %i, Setting DC output state to %i.\n", __FILE__, __LINE__, state);
+
+        uint32_t id = 0x19EF00FFu | (Handle.batteryId << 8);
+        uint8_t data[8];
+        data[0] = 0x00;
+        data[1] = 0x40;
+        data[2] = 0x00;
+        data[3] = 0x9E;
+        data[4] = 0x00;
+        data[5] = 0x00;
+        data[6] = 0x00;
+        data[7] = (uint8_t)state;
+
+        MyCAN_SendMessage(id, sizeof(data), data);
+    }
 }
 
-int16_t Battery_GetBatteryAh(void)
+static int16_t getDcInputPower(void)
 {
-    return (int16_t)((gCAN[CAN_FRAME_BatteryStatus].data[6] << 8) | gCAN[CAN_FRAME_BatteryStatus].data[7]);
+    float voltage = (float)Handle.data.dcInputVoltage * 0.01f;
+    float current = (float)Handle.data.dcInputCurrent * 0.01f;
+
+    int16_t power = (int16_t)(voltage * current);
+
+    return power;
 }
 
-int16_t Battery_GetDcPower(void)
+static int16_t getDcOutputPower(void)
 {
-    float input_voltage = (float)((int16_t)(((gCAN[CAN_FRAME_DcInputAndOutput].data[0] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[1])) * 0.01);
-    float input_current = (float)((int16_t)(((gCAN[CAN_FRAME_DcInputAndOutput].data[2] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[3])) * 0.01);
-    float output_voltage = (float)((int16_t)(((gCAN[CAN_FRAME_DcInputAndOutput].data[4] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[5])) * 0.01);
-    float output_current = (float)((int16_t)(((gCAN[CAN_FRAME_DcInputAndOutput].data[6] << 8) | gCAN[CAN_FRAME_DcInputAndOutput].data[7])) * 0.01);
+    float voltage = (float)Handle.data.dcOutputVoltage * 0.01f;
+    float current = (float)Handle.data.dcOutputCurrent * 0.01f;
 
-    float input_power = input_voltage * input_current;
-    float output_power = output_voltage * output_current;
+    int16_t power = (int16_t)(voltage * current);
 
-    int16_t dc_power = (int16_t)(input_power - output_power);
-
-    return dc_power;
+    return power;
 }
 
-int16_t Battery_GetAcPower(void)
+static int16_t getDcPower(void)
 {
-    float input_voltage = (float)((int16_t)(((gCAN[CAN_FRAME_AcInputAndOutput].data[0] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[1])) * 0.01);
-    float input_current = (float)((int16_t)(((gCAN[CAN_FRAME_AcInputAndOutput].data[2] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[3])) * 0.01);
-    float output_voltage = (float)((int16_t)(((gCAN[CAN_FRAME_AcInputAndOutput].data[4] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[5])) * 0.01);
-    float output_current = (float)((int16_t)(((gCAN[CAN_FRAME_AcInputAndOutput].data[6] << 8) | gCAN[CAN_FRAME_AcInputAndOutput].data[7])) * 0.01);
-
-    float input_power = input_voltage * input_current;
-    float output_power = output_voltage * output_current;
-
-    int16_t dc_power = (int16_t)(input_power - output_power);
-
-    return dc_power;
+    return (getDcInputPower() - getDcOutputPower());
 }
 
-int16_t Battery_GetPower(void)
+static int16_t getAcInputPower(void)
 {
-    return Battery_GetDcPower() + Battery_GetAcPower();
+    float voltage = (float)Handle.data.acInputVoltage * 0.01f;
+    float current = (float)Handle.data.acInputCurrent * 0.01f;
+
+    int16_t power = (int16_t)(voltage * current);
+
+    return power;
+}
+
+static int16_t getAcOutputPower(void)
+{
+    float voltage = (float)Handle.data.acOutputVoltage * 0.01f;
+    float current = (float)Handle.data.acOutputCurrent * 0.01f;
+
+    int16_t power = (int16_t)(voltage * current);
+
+    return power;
+}
+
+static int16_t getAcPower(void)
+{
+    return (getAcInputPower() - getAcOutputPower());
+}
+
+static int16_t getBatteryPower(void)
+{
+    return getDcPower() + getAcPower();
+}
+
+static void canCallback(uint32_t identifier, uint8_t data[8])
+{
+    Handle.lastMessageTimestamp = millis();
+
+    if (Handle.connected == false)
+    {
+        Handle.connected = true;
+        Handle.connectionTimestamp = millis();
+        Serial.printf("INFO, %s, %i, Battery connected.\n", __FILE__, __LINE__);
+    }
+
+    // Update the device ID since the battery sometimes changes it. The device ID is the second last byte of the identifier.
+    Handle.batteryId = (uint8_t)(identifier & 0xFFu);
+
+    for (uint8_t i = 0u; i < CAN_FRAME_UNDEFINED; i++)
+    {
+        if ((identifier & 0xFFFFFF00u) == (gCAN[i].id & 0xFFFFFF00u))
+        {
+            for (uint8_t j = 0u; j < 8u; j++)
+            {
+                gCAN[i].data[j] = data[j];
+            }
+        }
+    }
 }
