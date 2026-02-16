@@ -36,6 +36,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
 
   bool _requestedDcOutputState = false;
   bool _requestedAcOutputState = false;
+  bool _requestedDcInputState = false;
 
   @override
   void initState() {
@@ -105,6 +106,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
       setState(() {
         _requestedDcOutputState = value[0] == 1;
         _requestedAcOutputState = value[1] == 1;
+        _requestedDcInputState = value[2] == 1;
       });
     }
   }
@@ -113,6 +115,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
     List<int> value = [
       _requestedDcOutputState ? 1 : 0,
       _requestedAcOutputState ? 1 : 0,
+      _requestedDcInputState ? 1 : 0,
     ];
     getCharacteristic(_characteristicTransmit).write(value);
   }
@@ -320,6 +323,22 @@ class _BatteryScreenState extends State<BatteryScreen> {
                         // This is called when the user toggles the switch.
                         setState(() {
                           _requestedDcOutputState = value;
+                          writeCharacteristic();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Text("DC Input"),
+                    CupertinoSwitch(
+                      value: _requestedDcInputState,
+                      activeTrackColor: CupertinoColors.activeGreen,
+                      onChanged: (bool value) {
+                        // This is called when the user toggles the switch.
+                        setState(() {
+                          _requestedDcInputState = value;
                           writeCharacteristic();
                         });
                       },

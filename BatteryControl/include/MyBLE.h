@@ -27,6 +27,7 @@ typedef struct
 {
     uint8_t dcOutputStateRequested;
     uint8_t acOutputStateRequested;
+    uint8_t dcInputStateRequested;
 } MyBLE_ReceiveData_T;
 
 

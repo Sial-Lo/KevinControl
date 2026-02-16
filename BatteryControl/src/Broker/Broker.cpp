@@ -18,6 +18,8 @@ static struct Handle
 void Broker_Initialize(void)
 {
     Handle.pBatteryData = Battery_GetDataPtr();
+    pinMode(2, OUTPUT); //!< Set pin 2 as output for the LED indicating the battery connection status.
+    pinMode(23, OUTPUT); //!< Set pin 23 as output for the dc charging.
 }
 
 void Broker_Update(void)
@@ -32,10 +34,12 @@ void Broker_Update(void)
                 Serial.printf("INFO, %s, %i, Connection established.\n", __FILE__, __LINE__);
 
                 MyBLE_Start();
+                analogWrite(2, 5);
 
                 MyBLE_ReceiveData_T receiveData;
                 receiveData.dcOutputStateRequested = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
                 receiveData.acOutputStateRequested = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
+                receiveData.dcInputStateRequested = 0;
                 MyBLE_InitializeReceive(&receiveData);
             }
         }
@@ -46,6 +50,7 @@ void Broker_Update(void)
         {
             Handle.state = STATE_BATTERY_DISCONNECTED;
             MyBLE_Stop();
+            analogWrite(2, 0);
             Serial.printf("INFO, %s, %i, Battery disconnected.\n", __FILE__, __LINE__);
         }
         else
@@ -73,6 +78,15 @@ void Broker_Update(void)
             if (receiveData.acOutputStateRequested != ((Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0))
             {
                 Battery_SetAcOutput((receiveData.acOutputStateRequested == 1) ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
+            }
+
+            if (receiveData.dcInputStateRequested == 1)
+            {
+                digitalWrite(23, LOW);
+            }
+            else
+            {
+                digitalWrite(23, HIGH);
             }
         }
 
