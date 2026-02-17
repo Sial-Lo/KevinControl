@@ -18,7 +18,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
   final String _characteristicTransmit = "d7be7b90-2423-4d6e-926d-239bc96bb2fd";
 
   late StreamSubscription<List<int>> _notificationSubscriptionReceive;
-  // late StreamSubscription<List<int>> _notificationSubscriptionTransmit;
+  late StreamSubscription<List<int>> _notificationSubscriptionTransmit;
 
   int _showDetails = 0;
 
@@ -42,14 +42,21 @@ class _BatteryScreenState extends State<BatteryScreen> {
   void initState() {
     super.initState();
 
-    setNotifyToReceive();
     delayFunction();
+    setNotifyToReceive();
+    setNotifyToTransmit();
+  }
+
+  void delayFunction() async {
+    await Future.delayed(const Duration(milliseconds: 250));
+    _readReceive();
+    _readTransmit();
   }
 
   @override
   void dispose() {
     _notificationSubscriptionReceive.cancel();
-    // _notificationSubscriptionTransmit.cancel();
+    _notificationSubscriptionTransmit.cancel();
     super.dispose();
   }
 
@@ -68,33 +75,60 @@ class _BatteryScreenState extends State<BatteryScreen> {
     throw Exception("Characteristic with UUID $characteristicUuid not found");
   }
 
+  void unpackReceivedData(List<int> value) {
+    setState(() {
+      debugPrint("Notification value: $value");
+      if (value.length >= 9) {
+        _soc = ((value[1] << 8) | (value[0])) / 0xFFFF * 100 ~/ 1;
+        _dcOutputState = value[2] == 1;
+        _acOutputState = value[3] == 1;
+        _dcInputState = value[4] == 1;
+        _acInputState = value[5] == 1;
+        _dcInputPower = ((value[7] << 8) | (value[6]).toSigned(16));
+        _dcOutputPower = (value[9] << 8) | (value[8]).toSigned(16) * -1;
+        _acInputPower = (value[11] << 8) | (value[10]).toSigned(16);
+        _acOutputPower = (value[13] << 8) | (value[12]).toSigned(16) * -1;
+        _batteryPower = _dcInputPower + _acInputPower + _dcOutputPower + _acOutputPower;
+        _cellTemperature = ((value[15] << 8) | (value[14])).toSigned(16) * 0.0039 ~/ 1;
+      }
+    });
+  }
+
+  void unpackTransmitData(List<int> value) {
+    setState(() {
+      debugPrint("Notification value: $value");
+      if (value.length >= 3) {
+        _requestedDcOutputState = value[0] == 1;
+        _requestedAcOutputState = value[1] == 1;
+        _requestedDcInputState = value[2] == 1;
+      }
+    });
+  }
+
   void setNotifyToReceive() async {
     _notificationSubscriptionReceive = getCharacteristic(_characteristicReceive)
         .lastValueStream
         .listen((value) {
-          setState(() {
-            debugPrint("Notification value: $value");
-            if (value.length >= 9) {
-              _soc = ((value[1] << 8) | (value[0])) / 0xFFFF * 100 ~/ 1;
-              _dcOutputState = value[2] == 1;
-              _acOutputState = value[3] == 1;
-              _dcInputState = value[4] == 1;
-              _acInputState = value[5] == 1;
-              _dcInputPower = ((value[7] << 8) | (value[6]).toSigned(16));
-              _dcOutputPower = (value[9] << 8) | (value[8]).toSigned(16) * -1;
-              _acInputPower = (value[11] << 8) | (value[10]).toSigned(16);
-              _acOutputPower = (value[13] << 8) | (value[12]).toSigned(16) * -1;
-              _batteryPower = _dcInputPower + _acInputPower + _dcOutputPower + _acOutputPower;
-              _cellTemperature = ((value[15] << 8) | (value[14])).toSigned(16) * 0.0039 ~/ 1;
-            }
-          });
+          unpackReceivedData(value);
         });
     await getCharacteristic(_characteristicReceive).setNotifyValue(true);
   }
 
-  void delayFunction() async {
-    await Future.delayed(const Duration(milliseconds: 250));
-    _readTransmit();
+  void setNotifyToTransmit() async {
+    _notificationSubscriptionTransmit = getCharacteristic(_characteristicTransmit)
+        .lastValueStream
+        .listen((value) {
+          unpackTransmitData(value);
+        });
+    await getCharacteristic(_characteristicTransmit).setNotifyValue(true);
+  }
+
+  void _readReceive() async {
+    Future<List<int>> futureValue = getCharacteristic(
+      _characteristicReceive,
+    ).read();
+    List<int> value = await futureValue;
+    unpackReceivedData(value);
   }
 
   void _readTransmit() async {
@@ -102,22 +136,43 @@ class _BatteryScreenState extends State<BatteryScreen> {
       _characteristicTransmit,
     ).read();
     List<int> value = await futureValue;
-    if (value.isNotEmpty) {
-      setState(() {
-        _requestedDcOutputState = value[0] == 1;
-        _requestedAcOutputState = value[1] == 1;
-        _requestedDcInputState = value[2] == 1;
-      });
-    }
+    unpackTransmitData(value);
   }
 
-  void writeCharacteristic() async {
+  void writeTransmitCharacteristic() async {
     List<int> value = [
       _requestedDcOutputState ? 1 : 0,
       _requestedAcOutputState ? 1 : 0,
       _requestedDcInputState ? 1 : 0,
     ];
     getCharacteristic(_characteristicTransmit).write(value);
+  }
+
+  Future<void> _showConfirmationDialog(String title, String message, VoidCallback onConfirm) async {
+    showCupertinoDialog(
+      context: context,
+      builder: (BuildContext context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: <CupertinoDialogAction>[
+          CupertinoDialogAction(
+            isDestructiveAction: false,
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.pop(context);
+              onConfirm();
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -320,11 +375,16 @@ class _BatteryScreenState extends State<BatteryScreen> {
                       value: _requestedDcOutputState,
                       activeTrackColor: CupertinoColors.activeGreen,
                       onChanged: (bool value) {
-                        // This is called when the user toggles the switch.
-                        setState(() {
-                          _requestedDcOutputState = value;
-                          writeCharacteristic();
-                        });
+                        _showConfirmationDialog(
+                          'Turn ${value ? 'On' : 'Off'} DC Output?',
+                          'Are you sure you want to ${value ? 'turn on' : 'turn off'} the DC Output?',
+                          () {
+                            setState(() {
+                              _requestedDcOutputState = value;
+                              writeTransmitCharacteristic();
+                            });
+                          },
+                        );
                       },
                     ),
                   ],
@@ -336,11 +396,16 @@ class _BatteryScreenState extends State<BatteryScreen> {
                       value: _requestedDcInputState,
                       activeTrackColor: CupertinoColors.activeGreen,
                       onChanged: (bool value) {
-                        // This is called when the user toggles the switch.
-                        setState(() {
-                          _requestedDcInputState = value;
-                          writeCharacteristic();
-                        });
+                        _showConfirmationDialog(
+                          'Turn ${value ? 'On' : 'Off'} DC Input?',
+                          'Are you sure you want to ${value ? 'turn on' : 'turn off'} the DC Input?',
+                          () {
+                            setState(() {
+                              _requestedDcInputState = value;
+                              writeTransmitCharacteristic();
+                            });
+                          },
+                        );
                       },
                     ),
                   ],
@@ -352,11 +417,16 @@ class _BatteryScreenState extends State<BatteryScreen> {
                       value: _requestedAcOutputState,
                       activeTrackColor: CupertinoColors.activeGreen,
                       onChanged: (bool value) {
-                        // This is called when the user toggles the switch.
-                        setState(() {
-                          _requestedAcOutputState = value;
-                          writeCharacteristic();
-                        });
+                        _showConfirmationDialog(
+                          'Turn ${value ? 'On' : 'Off'} AC Output?',
+                          'Are you sure you want to ${value ? 'turn on' : 'turn off'} the AC Output?',
+                          () {
+                            setState(() {
+                              _requestedAcOutputState = value;
+                              writeTransmitCharacteristic();
+                            });
+                          },
+                        );
                       },
                     ),
                   ],

@@ -90,9 +90,10 @@ void MyBLE_Transmit(MyBLE_TransmitData_T *transmitData)
     Handle.pCharacteristicTransmit->notify();
 }
 
-void MyBLE_InitializeReceive(MyBLE_ReceiveData_T *receiveData)
+void MyBLE_SetReceive(MyBLE_ReceiveData_T *receiveData)
 {
     Handle.pCharacteristicReceive->setValue((uint8_t *)receiveData, sizeof(MyBLE_ReceiveData_T));
+    Handle.pCharacteristicReceive->notify();
 }
 
 MyBLE_ReceiveData_T MyBLE_Receive(void)

@@ -15,6 +15,9 @@ static struct Handle
     Battery_Data_T *pBatteryData = NULL;
 } Handle;
 
+static void handleDcOutputStateChange(MyBLE_ReceiveData_T *receiveData);
+static void handleAcOutputStateChange(MyBLE_ReceiveData_T *receiveData);
+
 void Broker_Initialize(void)
 {
     Handle.pBatteryData = Battery_GetDataPtr();
@@ -40,7 +43,7 @@ void Broker_Update(void)
                 receiveData.dcOutputStateRequested = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
                 receiveData.acOutputStateRequested = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
                 receiveData.dcInputStateRequested = 0;
-                MyBLE_InitializeReceive(&receiveData);
+                MyBLE_SetReceive(&receiveData);
             }
         }
     }
@@ -70,16 +73,10 @@ void Broker_Update(void)
 
 
             MyBLE_ReceiveData_T receiveData = MyBLE_Receive();
-            if (receiveData.dcOutputStateRequested != ((Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0))
-            {
-                Battery_SetDcOutput((receiveData.dcOutputStateRequested == 1) ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
-            }
+            handleDcOutputStateChange(&receiveData);
+            handleAcOutputStateChange(&receiveData);
 
-            if (receiveData.acOutputStateRequested != ((Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0))
-            {
-                Battery_SetAcOutput((receiveData.acOutputStateRequested == 1) ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
-            }
-
+            // Update DC Input State.
             if (receiveData.dcInputStateRequested == 1)
             {
                 digitalWrite(23, LOW);
@@ -91,5 +88,75 @@ void Broker_Update(void)
         }
 
 
+    }
+}
+
+static void handleDcOutputStateChange(MyBLE_ReceiveData_T *receiveData)
+{
+    static uint8_t previousDcOutputStateRequested = receiveData->dcOutputStateRequested;
+    static bool changeRequested = false;
+    bool currentDcOutputState = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
+
+    if (receiveData->dcOutputStateRequested != previousDcOutputStateRequested)
+    {
+        changeRequested = true;
+    }
+
+    if (changeRequested)
+    {
+        if (receiveData->dcOutputStateRequested != currentDcOutputState)
+        {
+            Battery_SetDcOutput((receiveData->dcOutputStateRequested == 1) ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
+        }
+        else
+        {
+            changeRequested = false;
+            previousDcOutputStateRequested = receiveData->dcOutputStateRequested;
+        }
+    }
+
+    if (receiveData->dcOutputStateRequested != currentDcOutputState)
+    {
+        if (false == changeRequested)
+        {
+            receiveData->dcOutputStateRequested = currentDcOutputState;
+            previousDcOutputStateRequested = currentDcOutputState;
+            MyBLE_SetReceive(receiveData);
+        }
+    }
+}
+
+static void handleAcOutputStateChange(MyBLE_ReceiveData_T *receiveData)
+{
+    static uint8_t previousAcOutputStateRequested = receiveData->acOutputStateRequested;
+    static bool changeRequested = false;
+    bool currentAcOutputState = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
+
+    if (receiveData->acOutputStateRequested != previousAcOutputStateRequested)
+    {
+        changeRequested = true;
+    }
+
+    if (changeRequested)
+    {
+        if (receiveData->acOutputStateRequested != currentAcOutputState)
+        {
+            Battery_SetAcOutput((receiveData->acOutputStateRequested == 1) ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
+        }
+        else
+        {
+            changeRequested = false;
+            previousAcOutputStateRequested = receiveData->acOutputStateRequested;
+        }
+    }
+
+    if (receiveData->acOutputStateRequested != currentAcOutputState)
+    {
+        if (false == changeRequested)
+        {
+            receiveData->acOutputStateRequested = currentAcOutputState;
+            previousAcOutputStateRequested = currentAcOutputState;
+            MyBLE_SetReceive(receiveData);
+        }
     }
 }
