@@ -12,7 +12,6 @@ static struct Handle
 {
     DataBroker_State_E state = STATE_BATTERY_DISCONNECTED;
     bool batteryConnected = false;
-    Battery_Data_T *pBatteryData = NULL;
 } Handle;
 
 static void handleDcOutputStateChange(MyBLE_ReceiveData_T *receiveData);
@@ -20,28 +19,21 @@ static void handleAcOutputStateChange(MyBLE_ReceiveData_T *receiveData);
 
 void Broker_Initialize(void)
 {
-    Handle.pBatteryData = Battery_GetDataPtr();
-    pinMode(2, OUTPUT); //!< Set pin 2 as output for the LED indicating the battery connection status.
-    pinMode(23, OUTPUT); //!< Set pin 23 as output for the dc charging.
 }
 
 void Broker_Update(void)
 {
     if (STATE_BATTERY_DISCONNECTED == Handle.state)
     {
-        if (Battery_IsConnected())
+        if (true == Battery_IsConnected())
         {
-            if (2000 < (millis() - Battery_IsConnectedTimestamp()))
+            if (1000 < (millis() - Battery_IsConnectedTimestamp()))
             {
                 Handle.state = STATE_BATTERY_CONNECTED;
-                Serial.printf("INFO, %s, %i, Connection established.\n", __FILE__, __LINE__);
-
-                MyBLE_Start();
-                analogWrite(2, 5);
 
                 MyBLE_ReceiveData_T receiveData;
-                receiveData.dcOutputStateRequested = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
-                receiveData.acOutputStateRequested = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
+                receiveData.dcOutputStateRequested = Battery_GetData(REQUEST_DC_OUTPUT_OPERATING_STATE);
+                receiveData.acOutputStateRequested = Battery_GetData(REQUEST_AC_OUTPUT_OPERATING_STATE);
                 receiveData.dcInputStateRequested = 0;
                 MyBLE_SetReceive(&receiveData);
             }
@@ -49,45 +41,33 @@ void Broker_Update(void)
     }
     else if (STATE_BATTERY_CONNECTED == Handle.state)
     {
-        if (!Battery_IsConnected())
+        if (false == Battery_IsConnected())
         {
             Handle.state = STATE_BATTERY_DISCONNECTED;
-            MyBLE_Stop();
-            analogWrite(2, 0);
             Serial.printf("INFO, %s, %i, Battery disconnected.\n", __FILE__, __LINE__);
         }
-        else
+    }
+
+    if (true == MyBLE_DeviceConnected())
+    {
+        if (STATE_BATTERY_DISCONNECTED == Handle.state)
         {
-            MyBLE_TransmitData_T transmitData;
-            transmitData.soc = Handle.pBatteryData->soc;
-            transmitData.dcOutputState = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
-            transmitData.acOutputState = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
-            transmitData.dcInputState = (Handle.pBatteryData->dcInputOperatingState == 5u) ? 1 : 0;
-            transmitData.acInputState = (Handle.pBatteryData->chargerOperatingState == 5u) ? 1 : 0;
-            transmitData.dcInputPower = Handle.pBatteryData->dcInputPower;
-            transmitData.dcOutputPower = Handle.pBatteryData->dcOutputPower;
-            transmitData.acInputPower = Handle.pBatteryData->acInputPower;
-            transmitData.acOutputPower = Handle.pBatteryData->acOutputPower;
-            transmitData.cellTemperatureAVG = Handle.pBatteryData->cellTemperatureAVG;
-            MyBLE_Transmit(&transmitData);
-
-
-            MyBLE_ReceiveData_T receiveData = MyBLE_Receive();
-            handleDcOutputStateChange(&receiveData);
-            handleAcOutputStateChange(&receiveData);
-
-            // Update DC Input State.
-            if (receiveData.dcInputStateRequested == 1)
-            {
-                digitalWrite(23, LOW);
-            }
-            else
-            {
-                digitalWrite(23, HIGH);
-            }
+            Battery_Wakeup();
         }
 
+        uint32_t transmitData[(uint8_t)REQUEST_UNDEFINED] = {0};
+        for (uint8_t i = 0; i < (uint8_t)REQUEST_UNDEFINED; i++)
+        {
+            transmitData[i] = Battery_GetData((Requests_E)i);
+        }
+        MyBLE_Transmit((uint8_t *)transmitData, sizeof(transmitData));
 
+        MyBLE_ReceiveData_T receiveData = MyBLE_Receive();
+        handleDcOutputStateChange(&receiveData);
+        handleAcOutputStateChange(&receiveData);
+
+        // Update DC Input State.
+        Battery_setDcInput(receiveData.dcInputStateRequested == 1 ? BATTERY_OUTPUT_STATE_ON : BATTERY_OUTPUT_STATE_OFF);
     }
 }
 
@@ -95,7 +75,7 @@ static void handleDcOutputStateChange(MyBLE_ReceiveData_T *receiveData)
 {
     static uint8_t previousDcOutputStateRequested = receiveData->dcOutputStateRequested;
     static bool changeRequested = false;
-    bool currentDcOutputState = (Handle.pBatteryData->dcOutputOperatingState == 5u) ? 1 : 0;
+    bool currentDcOutputState = (bool)Battery_GetData(REQUEST_DC_OUTPUT_OPERATING_STATE);
 
     if (receiveData->dcOutputStateRequested != previousDcOutputStateRequested)
     {
@@ -130,7 +110,7 @@ static void handleAcOutputStateChange(MyBLE_ReceiveData_T *receiveData)
 {
     static uint8_t previousAcOutputStateRequested = receiveData->acOutputStateRequested;
     static bool changeRequested = false;
-    bool currentAcOutputState = (Handle.pBatteryData->inverterOperatingState == 5u) ? 1 : 0;
+    bool currentAcOutputState = (bool)Battery_GetData(REQUEST_AC_OUTPUT_OPERATING_STATE);
 
     if (receiveData->acOutputStateRequested != previousAcOutputStateRequested)
     {

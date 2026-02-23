@@ -39,7 +39,7 @@ extern void MyBLE_Start(void);
 
 extern void MyBLE_Stop(void);
 
-extern void MyBLE_Transmit(MyBLE_TransmitData_T *transmitData);
+extern void MyBLE_Transmit(uint8_t *transmitData, size_t dataSize);
 
 extern void MyBLE_SetReceive(MyBLE_ReceiveData_T *receiveData);
 

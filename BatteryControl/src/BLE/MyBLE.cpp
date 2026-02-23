@@ -55,6 +55,9 @@ void MyBLE_Initialize(const char *name)
     Handle.pCharacteristicReceive = Handle.pService->createCharacteristic(CHARACTERISTIC_RECEIVE_UUID, (BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE));
 
     Serial.printf("INFO, %s, %i, Initialization successful.\n", __FILE__, __LINE__);
+
+    MyBLE_Start();
+    pinMode(2, OUTPUT); //!< Set pin 2 as output for the LED indicating the battery connection status.
 }
 
 bool MyBLE_DeviceConnected()
@@ -84,9 +87,9 @@ void MyBLE_Stop(void)
     Serial.printf("INFO, %s, %i, BLE stopped.\n", __FILE__, __LINE__);
 }
 
-void MyBLE_Transmit(MyBLE_TransmitData_T *transmitData)
+void MyBLE_Transmit(uint8_t *transmitData, size_t dataSize)
 {
-    Handle.pCharacteristicTransmit->setValue((uint8_t *)transmitData, sizeof(MyBLE_TransmitData_T));
+    Handle.pCharacteristicTransmit->setValue(transmitData, dataSize);
     Handle.pCharacteristicTransmit->notify();
 }
 
@@ -110,6 +113,7 @@ MyBLE_ReceiveData_T MyBLE_Receive(void)
 static void OnConnect(BLEServer *pServer)
 {
     Handle.connected = true;
+    analogWrite(2, 5);
     pServer->getAdvertising()->stop();
     Serial.printf("INFO, %s, %i, Connected.\n", __FILE__, __LINE__);
 }
@@ -117,6 +121,7 @@ static void OnConnect(BLEServer *pServer)
 static void OnDisconnect(BLEServer *pServer)
 {
     Handle.connected = false;
+    analogWrite(2, 0);
     pServer->getAdvertising()->start();
     Serial.printf("INFO, %s, %i, Disconnected.\n", __FILE__, __LINE__);
 }

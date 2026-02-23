@@ -20,19 +20,19 @@ class _BatteryScreenState extends State<BatteryScreen> {
   late StreamSubscription<List<int>> _notificationSubscriptionReceive;
   late StreamSubscription<List<int>> _notificationSubscriptionTransmit;
 
-  int _showDetails = 0;
-
   int _soc = 0;
-  bool _dcOutputState = false;
-  bool _acOutputState = false;
-  bool _dcInputState = false;
-  bool _acInputState = false;
-  int _dcInputPower = 0;
-  int _dcOutputPower = 0;
+  double _batteryVoltage = 0;
+  int _batteryPower = 0;
   int _acInputPower = 0;
   int _acOutputPower = 0;
-  int _batteryPower = 0;
+  int _dcInputPower = 0;
+  int _dcOutputPower = 0;
   int _cellTemperature = 0;
+
+  bool _acInputState = false;
+  bool _acOutputState = false;
+  bool _dcInputState = false;
+  bool _dcOutputState = false;
 
   bool _requestedDcOutputState = false;
   bool _requestedAcOutputState = false;
@@ -60,10 +60,6 @@ class _BatteryScreenState extends State<BatteryScreen> {
     super.dispose();
   }
 
-  void toggleDetails() {
-    _showDetails = (_showDetails == 0) ? 1 : 0;
-  }
-
   BluetoothCharacteristic getCharacteristic(String characteristicUuid) {
     for (var service in widget.device.servicesList) {
       for (var characteristic in service.characteristics) {
@@ -75,21 +71,28 @@ class _BatteryScreenState extends State<BatteryScreen> {
     throw Exception("Characteristic with UUID $characteristicUuid not found");
   }
 
+  double unpackSingleValue(List<int> value, int startBit)
+  {
+    return (((value[startBit + 3] << 24) | (value[startBit + 2] << 16) | (value[startBit + 1] << 8)  | (value[startBit])) / 65536);
+  }
+
   void unpackReceivedData(List<int> value) {
     setState(() {
       debugPrint("Notification value: $value");
-      if (value.length >= 9) {
-        _soc = ((value[1] << 8) | (value[0])) / 0xFFFF * 100 ~/ 1;
-        _dcOutputState = value[2] == 1;
-        _acOutputState = value[3] == 1;
-        _dcInputState = value[4] == 1;
-        _acInputState = value[5] == 1;
-        _dcInputPower = ((value[7] << 8) | (value[6]).toSigned(16));
-        _dcOutputPower = (value[9] << 8) | (value[8]).toSigned(16) * -1;
-        _acInputPower = (value[11] << 8) | (value[10]).toSigned(16);
-        _acOutputPower = (value[13] << 8) | (value[12]).toSigned(16) * -1;
-        _batteryPower = _dcInputPower + _acInputPower + _dcOutputPower + _acOutputPower;
-        _cellTemperature = ((value[15] << 8) | (value[14])).toSigned(16) * 0.0039 ~/ 1;
+      if (value.length >= (12*4)) {
+        _batteryVoltage = double.parse((unpackSingleValue(value, 0*4)).toStringAsFixed(2));
+        _acInputPower = unpackSingleValue(value, 1*4).round().toSigned(16);
+        _acOutputPower = unpackSingleValue(value, 2*4).round().toSigned(16);
+        _dcInputPower = unpackSingleValue(value, 3*4).round().toSigned(16);
+        _dcOutputPower = unpackSingleValue(value, 4*4).round().toSigned(16);
+        _soc = (unpackSingleValue(value, 5*4) * 100).round();
+        _cellTemperature = unpackSingleValue(value, 6*4).round().toSigned(16);
+        _batteryPower = unpackSingleValue(value, 7*4).round().toSigned(16);
+
+        _acInputState = unpackSingleValue(value, 8*4) == 5 ? true : false;
+        _acOutputState = unpackSingleValue(value, 9*4) == 5 ? true : false;
+        _dcInputState = unpackSingleValue(value, 10*4) == 5 ? true : false;
+        _dcOutputState = unpackSingleValue(value, 11*4) == 5 ? true : false;
       }
     });
   }
@@ -115,9 +118,10 @@ class _BatteryScreenState extends State<BatteryScreen> {
   }
 
   void setNotifyToTransmit() async {
-    _notificationSubscriptionTransmit = getCharacteristic(_characteristicTransmit)
-        .lastValueStream
-        .listen((value) {
+    _notificationSubscriptionTransmit =
+        getCharacteristic(_characteristicTransmit).lastValueStream.listen((
+          value,
+        ) {
           unpackTransmitData(value);
         });
     await getCharacteristic(_characteristicTransmit).setNotifyValue(true);
@@ -148,7 +152,11 @@ class _BatteryScreenState extends State<BatteryScreen> {
     getCharacteristic(_characteristicTransmit).write(value);
   }
 
-  Future<void> _showConfirmationDialog(String title, String message, VoidCallback onConfirm) async {
+  Future<void> _showConfirmationDialog(
+    String title,
+    String message,
+    VoidCallback onConfirm,
+  ) async {
     showCupertinoDialog(
       context: context,
       builder: (BuildContext context) => CupertinoAlertDialog(
@@ -181,17 +189,14 @@ class _BatteryScreenState extends State<BatteryScreen> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Center(
         child: Column(
-          spacing: 30,
           mainAxisSize: MainAxisSize.max,
           children: [
-            SizedBox(height: 0),
+            const SizedBox(height: 30),
             DefaultTextStyle.merge(
-                          style: const TextStyle(
-                            fontSize: 25,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          child: Text("Battery"),
-                        ),
+              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+              child: Text("Battery"),
+            ),
+            const SizedBox(height: 30),
             Row(
               mainAxisSize: MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -261,7 +266,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
                               ],
                             ),
                             Icon(
-                              CupertinoIcons.arrow_left_circle_fill,
+                              CupertinoIcons.arrow_left_right_circle_fill,
                               color: _dcOutputState
                                   ? CupertinoColors.activeGreen
                                   : CupertinoColors.systemGrey,
@@ -273,9 +278,9 @@ class _BatteryScreenState extends State<BatteryScreen> {
                     ),
                   ],
                 ),
-                SizedBox(width: 25),
+                const SizedBox(width: 25),
                 BatteryPercentage(value: _soc),
-                SizedBox(width: 25),
+                const SizedBox(width: 25),
                 Column(
                   mainAxisSize: MainAxisSize.max,
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -305,7 +310,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
                             Column(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                SizedBox(height: 0, width: 40),
+                                const SizedBox(height: 0, width: 40),
                                 DefaultTextStyle.merge(
                                   style: const TextStyle(fontSize: 10),
                                   child: Text("$_acInputPower W"),
@@ -316,7 +321,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
                         ),
                       ],
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     Column(
                       mainAxisSize: MainAxisSize.max,
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -340,7 +345,7 @@ class _BatteryScreenState extends State<BatteryScreen> {
                             Column(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                SizedBox(height: 0, width: 40),
+                                const SizedBox(height: 0, width: 40),
                                 DefaultTextStyle.merge(
                                   style: const TextStyle(fontSize: 10),
                                   child: Text("$_acOutputPower W"),
@@ -355,15 +360,51 @@ class _BatteryScreenState extends State<BatteryScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 30),
             DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               child: Text("$_batteryPower W"),
             ),
+            const SizedBox(height: 30),
+            DefaultTextStyle.merge(
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              child: Text("$_batteryVoltage V"),
+            ),
+            const SizedBox(height: 10),
             DefaultTextStyle.merge(
               style: const TextStyle(fontSize: 16),
               child: Text("$_cellTemperature °C"),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 30),
+            Row(
+              mainAxisSize: MainAxisSize.max,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    Text("DC Input"),
+                    CupertinoSwitch(
+                      value: _requestedDcInputState,
+                      activeTrackColor: CupertinoColors.activeGreen,
+                      onChanged: (bool value) {
+                        _showConfirmationDialog(
+                          'Turn ${value ? 'On' : 'Off'} DC Input?',
+                          'Are you sure you want to ${value ? 'turn on' : 'turn off'} the DC Input?',
+                          () {
+                            setState(() {
+                              _requestedDcInputState = value;
+                              writeTransmitCharacteristic();
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 65, height: 39),
+              ],
+            ),
+            const SizedBox(height: 30),
             Row(
               mainAxisSize: MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -381,27 +422,6 @@ class _BatteryScreenState extends State<BatteryScreen> {
                           () {
                             setState(() {
                               _requestedDcOutputState = value;
-                              writeTransmitCharacteristic();
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                Column(
-                  children: [
-                    Text("DC Input"),
-                    CupertinoSwitch(
-                      value: _requestedDcInputState,
-                      activeTrackColor: CupertinoColors.activeGreen,
-                      onChanged: (bool value) {
-                        _showConfirmationDialog(
-                          'Turn ${value ? 'On' : 'Off'} DC Input?',
-                          'Are you sure you want to ${value ? 'turn on' : 'turn off'} the DC Input?',
-                          () {
-                            setState(() {
-                              _requestedDcInputState = value;
                               writeTransmitCharacteristic();
                             });
                           },

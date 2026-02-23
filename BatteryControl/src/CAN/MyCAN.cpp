@@ -22,6 +22,7 @@ static struct
 {
     bool initialized = false;
     MyCAN_Message_T messages[MAX_MESSAGES] = {0, 0, NULL};
+    bool enableRequests = false;
 } Handle;
 
 bool MyCAN_Initialize(void)
@@ -163,6 +164,46 @@ void MyCAN_SendMessage(uint32_t identifier, uint8_t length, uint8_t data[8])
     }
 }
 
+void MyCAN_Request(uint32_t canId, uint8_t id)
+{
+    twai_message_t message;
+    message.extd = 1;
+    message.rtr = 0;
+    message.ss = 0;
+    message.self = 0;
+    message.dlc_non_comp = 0;
+
+    message.identifier = canId;
+    message.data_length_code = 8;
+
+    message.data[0] = 0x00;
+    message.data[1] = 0x40;
+    message.data[2] = 0x00;
+    message.data[3] = id;
+    message.data[4] = 0x00;
+    message.data[5] = 0x00;
+    message.data[6] = 0x00;
+    message.data[7] = 0x00;
+
+    if (ESP_OK != twai_transmit(&message, pdMS_TO_TICKS(1000)))
+    {
+        Serial.printf("ERROR, %s, %i, Failed to queue message for transmission.\n", __FILE__, __LINE__);
+    }
+}
+
+void MyCAN_ClearAlerts(void)
+{
+    if (ESP_OK != twai_initiate_recovery())
+    {
+        Serial.printf("ERROR, %s, %i, Failed to initiate recovery.\n", __FILE__, __LINE__);
+    }
+
+    if (ESP_OK != twai_start())
+    {
+        Serial.printf("ERROR, %s, %i, Failed to start driver.\n", __FILE__, __LINE__);
+    }
+}
+
 static void handle_rx_messages(twai_message_t &message)
 {
     if (message.extd)
@@ -175,7 +216,6 @@ static void handle_rx_messages(twai_message_t &message)
                 {
                     if ((message.identifier & Handle.messages[messageCount].mask) == (Handle.messages[messageCount].identifier & Handle.messages[messageCount].mask))
                     {
-
                         Handle.messages[messageCount].callback(message.identifier, message.data);
                     }
                 }

@@ -23,6 +23,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
     _connectionStateSubscription = widget.device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.connected) {
         await widget.device.discoverServices();
+        await widget.device.requestMtu(247);
         openScreen();
 
         // MaterialPageRoute routeLoading = MaterialPageRoute(

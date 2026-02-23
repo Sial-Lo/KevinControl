@@ -23,17 +23,23 @@ void loop()
 {
     static unsigned long canTimestamp = millis();
     static unsigned long batteryTimestamp = millis();
+    static unsigned long brokerTimestamp = millis();
 
-    if (10 <= (millis() - canTimestamp))
+    if (2 <= (millis() - canTimestamp))
     {
         canTimestamp = millis();
         MyCAN_Update();
     }
 
-    if (1000 <= (millis() - batteryTimestamp))
+    if (20 <= (millis() - batteryTimestamp))
     {
         batteryTimestamp = millis();
         Battery_Update();
+    }
+
+    if (1000 <= (millis() - brokerTimestamp))
+    {
+        brokerTimestamp = millis();
         Broker_Update();
     }
 }
