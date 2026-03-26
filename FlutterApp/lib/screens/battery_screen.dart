@@ -81,13 +81,13 @@ class _BatteryScreenState extends State<BatteryScreen> {
       debugPrint("Notification value: $value");
       if (value.length >= (12*4)) {
         _batteryVoltage = double.parse((unpackSingleValue(value, 0*4)).toStringAsFixed(2));
-        _acInputPower = unpackSingleValue(value, 1*4).round().toSigned(16);
-        _acOutputPower = unpackSingleValue(value, 2*4).round().toSigned(16);
-        _dcInputPower = unpackSingleValue(value, 3*4).round().toSigned(16);
-        _dcOutputPower = unpackSingleValue(value, 4*4).round().toSigned(16);
+        _acInputPower = unpackSingleValue(value, 1*4).round().toSigned(32);
+        _acOutputPower = unpackSingleValue(value, 2*4).round().toSigned(32);
+        _dcInputPower = unpackSingleValue(value, 3*4).round().toSigned(32);
+        _dcOutputPower = unpackSingleValue(value, 4*4).round().toSigned(32);
         _soc = (unpackSingleValue(value, 5*4) * 100).round();
-        _cellTemperature = unpackSingleValue(value, 6*4).round().toSigned(16);
-        _batteryPower = unpackSingleValue(value, 7*4).round().toSigned(16);
+        _cellTemperature = unpackSingleValue(value, 6*4).round().toSigned(32);
+        _batteryPower = unpackSingleValue(value, 7*4).round().toSigned(32);
 
         _acInputState = unpackSingleValue(value, 8*4) == 5 ? true : false;
         _acOutputState = unpackSingleValue(value, 9*4) == 5 ? true : false;
